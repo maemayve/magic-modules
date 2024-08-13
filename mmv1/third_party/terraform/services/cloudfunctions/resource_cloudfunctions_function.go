@@ -298,6 +298,33 @@ func ResourceCloudFunctionsFunction() *schema.Resource {
 				Description: ` If provided, the self-provided service account to run the function with.`,
 			},
 
+			"automatic_update_policy": {
+				Type:          schema.TypeList,
+				Optional:      true,
+				Computed:      true,
+				ConflictsWith: []string{"on_deploy_update_policy"},
+				MaxItems:      1,
+				Description:   `Security patches are applied automatically to the runtime without requiring the function be redeployed.`,
+				Elem:          &schema.Resource{Schema: map[string]*schema.Schema{}},
+			},
+
+			"on_deploy_update_policy": {
+				Type:          schema.TypeList,
+				Optional:      true,
+				Computed:      true,
+				ConflictsWith: []string{"automatic_update_policy"},
+				MaxItems:      1,
+				Description:   `Security patches are only applied when a function is redeployed.`,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"runtime_version": {
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: `Contains the runtime version which was used during latest function deployment.`,
+						},
+					}},
+			},
+
 			"build_service_account": {
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -634,6 +661,12 @@ func resourceCloudFunctionsCreate(d *schema.ResourceData, meta interface{}) erro
 		function.MinInstances = int64(v.(int))
 	}
 
+	if v, ok := d.GetOk("on_deploy_update_policy"); ok {
+		function.OnDeployUpdatePolicy = expandOnDeployUpdatePolicy(v.([]interface{}))
+	} else if v, ok := d.GetOk("automatic_update_policy"); ok {
+		function.AutomaticUpdatePolicy = expandAutomaticUpdatePolicy(v.([]interface{}))
+	}
+
 	if v, ok := d.GetOk("build_service_account"); ok {
 		function.BuildServiceAccount = v.(string)
 	}
@@ -724,6 +757,12 @@ func resourceCloudFunctionsRead(d *schema.ResourceData, meta interface{}) error 
 	}
 	if err := d.Set("service_account_email", function.ServiceAccountEmail); err != nil {
 		return fmt.Errorf("Error setting service_account_email: %s", err)
+	}
+	if err := d.Set("on_deploy_update_policy", flattenOnDeployUpdatePolicy(function.OnDeployUpdatePolicy)); err != nil {
+		return fmt.Errorf("Error setting on_deploy_update_policy: %s", err)
+	}
+	if err := d.Set("automatic_update_policy", flattenAutomaticUpdatePolicy(function.AutomaticUpdatePolicy)); err != nil {
+		return fmt.Errorf("Error setting automatic_update_policy: %s", err)
 	}
 	if err := d.Set("build_service_account", function.BuildServiceAccount); err != nil {
 		return fmt.Errorf("Error setting build_service_account: %s", err)
@@ -1014,6 +1053,41 @@ func resourceCloudFunctionsDestroy(d *schema.ResourceData, meta interface{}) err
 	d.SetId("")
 
 	return nil
+}
+
+func expandAutomaticUpdatePolicy(configured []interface{}) *cloudfunctions.AutomaticUpdatePolicy {
+	return &cloudfunctions.AutomaticUpdatePolicy{}
+}
+
+func flattenAutomaticUpdatePolicy(automaticUpdatePolicy *cloudfunctions.AutomaticUpdatePolicy) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, 1)
+	if automaticUpdatePolicy == nil {
+		return result
+	}
+
+	return append(result, map[string]interface{}{})
+}
+
+func expandOnDeployUpdatePolicy(configured []interface{}) *cloudfunctions.OnDeployUpdatePolicy {
+	if len(configured) == 0 || configured[0] == nil {
+		return nil
+	}
+	data := configured[0].(map[string]interface{})
+	runtimeVersion := data["runtime_version"].(string)
+	return &cloudfunctions.OnDeployUpdatePolicy{
+		RuntimeVersion: runtimeVersion,
+	}
+}
+
+func flattenOnDeployUpdatePolicy(onDeployUpdatePolicy *cloudfunctions.OnDeployUpdatePolicy) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, 1)
+	if onDeployUpdatePolicy == nil {
+		return result
+	}
+
+	return append(result, map[string]interface{}{
+		"runtime_version": onDeployUpdatePolicy.RuntimeVersion,
+	})
 }
 
 func expandEventTrigger(configured []interface{}, project string) *cloudfunctions.EventTrigger {
